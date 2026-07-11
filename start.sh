@@ -5,6 +5,10 @@ echo "🚀 Starting Nova AI backend (Python) on port ${PORT:-8000}..."
 python3 back.py &
 BACK_PID=$!
 
+# Jeda kecil biar back.py sempat generate & simpan API_KEY ke config.json
+# dulu (kalau env var API_KEY tidak diset) sebelum wa.js baca filenya.
+sleep 2
+
 # Kalau back.py mati, seluruh container ikut mati (biar Railway restart otomatis)
 trap "echo '🛑 Shutting down...'; kill -TERM $BACK_PID 2>/dev/null; exit 0" SIGTERM SIGINT
 

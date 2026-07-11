@@ -25,6 +25,10 @@ try {
   if (configData.nama_user) OWNER_NAME = configData.nama_user
 } catch (e) {}
 
+// Key buat otentikasi wa.js -> back.py (server-ke-server). Prioritas env
+// var API_KEY (sama seperti yang dibaca back.py), fallback ke config.json.
+const API_KEY = process.env.API_KEY || configData.api_key || ''
+
 const QR_FILE = 'qr_current.txt'
 const QR_IMAGE = 'qr_current.png'
 const SELF_FILE = 'self_mode.txt'
@@ -290,7 +294,7 @@ async function connectToWhatsApp() {
     try {
       const res = await fetch(`${BACKEND}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Api-Key': API_KEY },
         body: JSON.stringify({ session_id: from, message: text })
       })
       const data = await res.json()
