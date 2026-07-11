@@ -12,6 +12,7 @@ Buka project di Railway → tab **Variables** → tambahkan:
 | `GEMINI_API_KEY` | API key Gemini kamu |
 | `OPENAI_API_KEY` | API key OpenAI kamu (kalau pakai fitur ChatGPT) |
 | `API_KEY` | Key rahasia buat proteksi `/chat` & `/global-ai` — lihat bagian di bawah |
+| `DATA_DIR` | `/data` — wajib diisi setelah pasang Volume (lihat langkah 4) |
 
 Railway otomatis kasih `PORT` sendiri, tidak perlu di-set manual.
 
@@ -19,11 +20,13 @@ Railway otomatis kasih `PORT` sendiri, tidak perlu di-set manual.
 Railway bakal detect `Dockerfile` otomatis dan jalanin `start.sh`
 (backend Python + bot WhatsApp jalan bareng dalam satu container).
 
-## 4. Scan ulang QR WhatsApp
-Karena filesystem Railway ephemeral (kereset tiap redeploy kalau tanpa volume),
-folder `wa_auth/` bakal hilang tiap redeploy → perlu scan QR ulang di `/qr`.
-Kalau mau sesi WA persist antar redeploy, tambahkan **Volume** di Railway dan
-mount ke `/app/wa_auth`.
+## 4. Pasang Volume (wajib — biar data tidak reset tiap redeploy)
+Railway filesystem ephemeral: `config.json` (termasuk semua API key),
+`user.json`, `token.json`, sesi WhatsApp (`wa_auth/`), dan beberapa file
+lain kereset tiap redeploy kalau tanpa Volume. Lihat panduan lengkap
+step-by-step di [`README.md`](./README.md#️-penting-setup-railway-volume-wajib-sekali-di-awal)
+— intinya: buat Volume dengan mount path `/data`, lalu set env var
+`DATA_DIR=/data`.
 
 ## Catatan keamanan
 Key Gemini & OpenAI yang lama sempat ketulis plain-text di `config.json`.
@@ -36,42 +39,58 @@ Endpoint `/chat` (dipakai halaman `index.html`) dan `/global-ai` sekarang
 wajib header `X-Api-Key` yang cocok, supaya orang lain yang cuma tahu URL
 Railway kamu nggak bisa langsung pakai AI-nya (dan boros kuota Gemini/OpenAI).
 
-- Kalau env var `API_KEY` diisi di Railway, itu yang dipakai.
-- Kalau tidak diisi, server generate sendiri sekali saat pertama kali
-  jalan, dan tampil di **Logs** Railway (`⚠️ API_KEY belum diset — key
-  baru digenerate: ...`) serta tersimpan ke `config.json`.
-- **Disarankan**: set manual `API_KEY` di tab Variables Railway dengan
-  string acak sendiri, biar jelas dan tidak hilang kalau `config.json`
-  ke-reset (tidak ada volume untuk file ini).
-- Halaman `static/index.html` sekarang akan minta "Kode Akses" sekali di
-  awal, simpan di `localStorage` browser, dan otomatis dikirim di setiap
-  chat. Kalau salah / kadaluarsa, akan diminta ulang.
+- Kalau env var `API_KEY` diisi di Railway, itu jadi "master key" (nama
+  tampilan `env-master`) — dipakai `wa.js` buat manggil `/chat`
+  server-ke-server, dan tetap berlaku walau `config.json` ke-reset.
+- Selain itu, tiap client (web widget, script Python, dll) bisa punya
+  API key sendiri-sendiri, disimpan di `config.json["api_keys"]` dengan
+  nama masing-masing + hitungan pemakaian. Kalau belum ada key sama
+  sekali dan `API_KEY` juga tidak diset, server generate satu otomatis
+  saat pertama kali jalan (cek **Logs** Railway).
+- Halaman `static/index.html` akan minta "Kode Akses" sekali di awal,
+  simpan di `localStorage` browser, dan otomatis dikirim di setiap chat.
+  Kalau salah / dicabut, akan diminta ulang.
 - Selain itu ada rate limit 20 request/menit per-IP di `/chat`, berlaku
   walau API key valid — jaga-jaga kalau key ke-share.
 
-### Lihat / ganti API key lewat chat
+### Kelola API key
 
-Kirim pesan berikut ke `/chat` (bisa via halaman web, curl, atau Postman —
-**tidak perlu** header `X-Api-Key` untuk command ini, cukup `kode_akses`):
+Dua cara: lewat **dashboard web** (`/admin`, lihat bagian di bawah) atau
+lewat **chat** — kirim pesan berikut ke `/chat` (tidak perlu header
+`X-Api-Key`, cukup `kode_akses`):
 
 ```
-/apikey {kode_akses} lihat
-/apikey {kode_akses} rotate
+/apikey {kode_akses} list
+/apikey {kode_akses} new {nama}
+/apikey {kode_akses} revoke {nama}
 ```
 
-- `lihat` → menampilkan API key yang aktif sekarang.
-- `rotate` → generate API key baru, key lama langsung tidak berlaku.
-  **Tidak bisa dipakai kalau env var `API_KEY` diset di Railway** — dalam
-  kasus itu, ganti langsung di tab Variables Railway lalu redeploy.
+- `list` → semua key aktif + berapa kali dipakai + terakhir dipakai kapan.
+- `new {nama}` → bikin key baru buat client tertentu, misal
+  `/apikey SXIELD1 new whatsapp-bot`.
+- `revoke {nama}` → cabut satu key spesifik, tanpa ganggu key lain.
 
-Contoh pakai curl (ganti `KODE_AKSES` dengan isi `kode_akses` di config.json,
-dan URL dengan domain Railway kamu):
+Contoh pakai curl (ganti `KODE_AKSES` dan URL Railway kamu):
 
 ```bash
 curl -X POST https://nova-xxx.up.railway.app/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "/apikey KODE_AKSES rotate"}'
+  -d '{"message": "/apikey KODE_AKSES list"}'
 ```
 
-Ini juga jalur recovery kalau API key hilang/lupa tapi `kode_akses` masih
-diingat.
+Ini juga jalur recovery kalau semua API key hilang tapi `kode_akses`
+masih diingat.
+
+## Dashboard Admin (`/admin`)
+
+Buka `https://nova-xxx.up.railway.app/admin` di browser — halaman ini
+minta `kode_akses` sekali (disimpan di sessionStorage, hilang kalau tab
+ditutup), lalu nampilin:
+
+- **Status** — nama AI, global AI aktif, total user, total API key.
+- **API Keys** — daftar key + pemakaian, bisa bikin key baru per client
+  atau cabut satu-satu, tanpa perlu ketik command chat.
+- **Users** — daftar akun login (dari `/login`), bisa tambah/hapus.
+
+Ini setara dengan command `/apikey`, `/admin/list`, `/admin/create`,
+`/admin/delete` yang sudah ada, cuma lebih enak dipakai dari HP.

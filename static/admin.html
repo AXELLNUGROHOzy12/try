@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nova Control</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  :root {
+    --bg: #08090c;
+    --panel: #101218;
+    --panel2: #161922;
+    --line: #232733;
+    --text: #d8dce6;
+    --sub: #6b7386;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  body {
+    background: var(--bg); color: var(--text); min-height: 100dvh;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background-image: radial-gradient(circle at 1px 1px, #ffffff08 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  /* ── Gate ── */
+  #gate { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 50 }
+  #gate.hidden { display: none }
+  .gate-box { width: 100%; max-width: 340px; padding: 32px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel) }
+  .gate-eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .15em; color: var(--green); margin-bottom: 6px }
+  .gate-box h1 { font-size: 20px; margin-bottom: 18px; letter-spacing: -.01em }
+  .gate-box input { width: 100%; background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; color: var(--text); padding: 11px 12px; font-family: var(--mono); font-size: 13px; margin-bottom: 12px; outline: none }
+  .gate-box input:focus { border-color: var(--green) }
+  .gate-box button { width: 100%; background: var(--green); border: none; color: #08090c; border-radius: 3px; padding: 11px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: var(--mono); letter-spacing: .04em }
+  .gate-box button:hover { opacity: .9 }
+  .gate-err { color: var(--red); font-size: 12px; margin-top: 10px; font-family: var(--mono); min-height: 14px }
+
+  /* ── Shell ── */
+  #shell { display: none; max-width: 920px; margin: 0 auto; padding: 28px 20px 60px }
+  #shell.visible { display: block }
+
+  .topbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 10px }
+  .topbar .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .15em; color: var(--green) }
+  .topbar h1 { font-size: 22px; letter-spacing: -.01em; margin-top: 4px }
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 7px; box-shadow: 0 0 0 0 rgba(74,222,128,.6); animation: pulse 2s infinite }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)} 70%{box-shadow:0 0 0 6px rgba(74,222,128,0)} 100%{box-shadow:0 0 0 0 rgba(74,222,128,0)} }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: 26px; border-radius: 4px; overflow: hidden }
+  .stat { background: var(--panel); padding: 14px 16px }
+  .stat .label { font-family: var(--mono); font-size: 10px; color: var(--sub); letter-spacing: .1em; text-transform: uppercase }
+  .stat .value { font-size: 17px; margin-top: 5px; font-weight: 600; word-break: break-word }
+
+  .panel { border: 1px solid var(--line); border-radius: 4px; background: var(--panel); margin-bottom: 24px }
+  .panel-head { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between }
+  .panel-head h2 { font-size: 13px; font-family: var(--mono); letter-spacing: .06em; color: var(--text) }
+  .panel-head span { font-size: 11px; color: var(--sub); font-family: var(--mono) }
+  .panel-body { padding: 6px 0 }
+
+  .row { display: flex; align-items: center; gap: 12px; padding: 11px 18px; border-bottom: 1px solid var(--line); font-size: 13px }
+  .row:last-child { border-bottom: none }
+  .row .name { font-weight: 600; min-width: 110px }
+  .row .meta { color: var(--sub); font-size: 11.5px; font-family: var(--mono); flex: 1 }
+  .row .key-preview { font-family: var(--mono); color: var(--sub); font-size: 11.5px }
+  .row button { background: transparent; border: 1px solid var(--line); color: var(--red); border-radius: 3px; padding: 5px 10px; font-size: 11px; cursor: pointer; font-family: var(--mono); white-space: nowrap }
+  .row button:hover { border-color: var(--red); background: #f8717115 }
+  .badge { font-family: var(--mono); font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--panel2); color: var(--amber); border: 1px solid var(--line) }
+  .empty { padding: 20px 18px; color: var(--sub); font-size: 12.5px; font-family: var(--mono) }
+
+  .new-form { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line) }
+  .new-form input { flex: 1; background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; color: var(--text); padding: 9px 11px; font-size: 13px; outline: none; font-family: var(--mono) }
+  .new-form input:focus { border-color: var(--green) }
+  .new-form button { background: var(--green); border: none; color: #08090c; border-radius: 3px; padding: 9px 16px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: var(--mono) }
+  .new-form button:hover { opacity: .9 }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line); padding: 10px 18px; border-radius: 4px; font-size: 12.5px; font-family: var(--mono); opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90%; text-align: center }
+  .toast.show { opacity: 1 }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-box">
+    <div class="gate-eyebrow">// AKSES TERBATAS</div>
+    <h1>Nova Control</h1>
+    <input type="password" id="kodeInput" placeholder="kode_akses" autocomplete="off">
+    <button id="kodeBtn">Masuk</button>
+    <div class="gate-err" id="kodeErr"></div>
+  </div>
+</div>
+
+<div id="shell">
+  <div class="topbar">
+    <div>
+      <div class="eyebrow"><span class="live-dot"></span>NOVA AI // PANEL KONTROL</div>
+      <h1 id="pageTitle">Nova Control</h1>
+    </div>
+  </div>
+
+  <div class="stat-row" id="statRow">
+    <div class="stat"><div class="label">Status</div><div class="value">memuat…</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>API KEYS</h2>
+      <span id="keyCount">0 aktif</span>
+    </div>
+    <div class="panel-body" id="keysBody"><div class="empty">Memuat…</div></div>
+    <form class="new-form" id="keyForm">
+      <input type="text" id="keyNameInput" placeholder="nama client (mis: whatsapp-bot, widget-portfolio)" required>
+      <button type="submit">+ Buat Key</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>USERS</h2>
+      <span id="userCount">0 akun</span>
+    </div>
+    <div class="panel-body" id="usersBody"><div class="empty">Memuat…</div></div>
+    <form class="new-form" id="userForm">
+      <input type="text" id="userNameInput" placeholder="username" required style="flex:.7">
+      <input type="text" id="userPassInput" placeholder="password" required style="flex:.7">
+      <button type="submit">+ Buat User</button>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let KODE = sessionStorage.getItem('nova_kode') || ''
+
+const gate = document.getElementById('gate')
+const shell = document.getElementById('shell')
+const kodeInput = document.getElementById('kodeInput')
+const kodeBtn = document.getElementById('kodeBtn')
+const kodeErr = document.getElementById('kodeErr')
+
+function toast(msg) {
+  const t = document.getElementById('toast')
+  t.textContent = msg
+  t.classList.add('show')
+  setTimeout(() => t.classList.remove('show'), 2400)
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Access-Code': KODE },
+    body: JSON.stringify(body || {})
+  })
+  if (res.status === 403) throw new Error('FORBIDDEN')
+  return res.json()
+}
+
+async function tryLogin() {
+  const val = kodeInput.value.trim()
+  if (!val) return
+  kodeBtn.disabled = true
+  kodeErr.textContent = ''
+  KODE = val
+  try {
+    await loadAll()
+    sessionStorage.setItem('nova_kode', val)
+    gate.classList.add('hidden')
+    shell.classList.add('visible')
+  } catch (e) {
+    kodeErr.textContent = 'Kode akses salah.'
+    KODE = ''
+  }
+  kodeBtn.disabled = false
+}
+kodeBtn.addEventListener('click', tryLogin)
+kodeInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin() })
+
+function fmtTime(ts) {
+  if (!ts) return 'belum pernah'
+  return new Date(ts * 1000).toLocaleString('id-ID', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+}
+
+async function loadStatus() {
+  const s = await api('/admin/status')
+  document.getElementById('pageTitle').textContent = s.nama_ai || 'Nova Control'
+  document.getElementById('statRow').innerHTML = `
+    <div class="stat"><div class="label">Nama AI</div><div class="value">${s.nama_ai || '—'}</div></div>
+    <div class="stat"><div class="label">Global AI</div><div class="value">${s.global_ai || 'per-sesi'}</div></div>
+    <div class="stat"><div class="label">Total Users</div><div class="value">${s.total_users}</div></div>
+    <div class="stat"><div class="label">Total API Keys</div><div class="value">${s.total_api_keys}</div></div>
+  `
+}
+
+async function loadKeys() {
+  const data = await api('/admin/apikeys/list')
+  const body = document.getElementById('keysBody')
+  document.getElementById('keyCount').textContent = data.keys.length + ' aktif' + (data.env_master_active ? ' + env-master' : '')
+  if (!data.keys.length) {
+    body.innerHTML = data.env_master_active
+      ? '<div class="empty">Belum ada named key — hanya env-master (dari Railway Variables) yang aktif.</div>'
+      : '<div class="empty">Belum ada API key.</div>'
+    return
+  }
+  body.innerHTML = data.keys.map(k => `
+    <div class="row">
+      <span class="name">${k.name}</span>
+      <span class="meta">${k.requests}× pakai · terakhir ${fmtTime(k.last_used)} · <span class="key-preview">${k.key.slice(0,10)}…${k.key.slice(-4)}</span></span>
+      <button data-revoke-key="${k.name}">Cabut</button>
+    </div>
+  `).join('')
+  body.querySelectorAll('[data-revoke-key]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.getAttribute('data-revoke-key')
+      if (!confirm(`Cabut key '${name}'? Client yang pakai langsung ke-block.`)) return
+      await api('/admin/apikeys/revoke', { name })
+      toast(`Key '${name}' dicabut`)
+      loadKeys(); loadStatus()
+    })
+  })
+}
+
+async function loadUsers() {
+  const data = await api('/admin/list')
+  const body = document.getElementById('usersBody')
+  const entries = Object.entries(data.users || {})
+  document.getElementById('userCount').textContent = entries.length + ' akun'
+  if (!entries.length) { body.innerHTML = '<div class="empty">Belum ada user.</div>'; return }
+  body.innerHTML = entries.map(([uname, meta]) => `
+    <div class="row">
+      <span class="name">${uname}</span>
+      <span class="meta">${meta.is_admin ? '<span class="badge">ADMIN</span>' : 'user biasa'}</span>
+      <button data-del-user="${uname}">Hapus</button>
+    </div>
+  `).join('')
+  body.querySelectorAll('[data-del-user]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const uname = btn.getAttribute('data-del-user')
+      if (!confirm(`Hapus user '${uname}'?`)) return
+      await api('/admin/delete', { target_user: uname })
+      toast(`User '${uname}' dihapus`)
+      loadUsers(); loadStatus()
+    })
+  })
+}
+
+async function loadAll() {
+  await Promise.all([loadStatus(), loadKeys(), loadUsers()])
+}
+
+document.getElementById('keyForm').addEventListener('submit', async e => {
+  e.preventDefault()
+  const nameInput = document.getElementById('keyNameInput')
+  const nama = nameInput.value.trim()
+  if (!nama) return
+  const res = await api('/admin/apikeys/create', { name: nama })
+  nameInput.value = ''
+  toast(`Key '${nama}' dibuat: ${res.key}`)
+  loadKeys(); loadStatus()
+})
+
+document.getElementById('userForm').addEventListener('submit', async e => {
+  e.preventDefault()
+  const u = document.getElementById('userNameInput')
+  const p = document.getElementById('userPassInput')
+  if (!u.value.trim() || !p.value.trim()) return
+  await api('/admin/create', { new_user: u.value.trim(), new_pass: p.value.trim(), is_admin: false })
+  toast(`User '${u.value.trim()}' dibuat`)
+  u.value = ''; p.value = ''
+  loadUsers(); loadStatus()
+})
+
+// Auto-login kalau kode udah tersimpan di sesi ini
+if (KODE) {
+  loadAll().then(() => {
+    gate.classList.add('hidden')
+    shell.classList.add('visible')
+  }).catch(() => {
+    sessionStorage.removeItem('nova_kode')
+    KODE = ''
+  })
+}
+</script>
+</body>
+</html>

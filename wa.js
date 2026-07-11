@@ -16,8 +16,15 @@ const __dirname = path.dirname(__filename)
 const PORT = process.env.PORT || 8000
 const BACKEND = process.env.BACKEND_URL || `http://localhost:${PORT}`
 
+// DATA_DIR bisa diarahkan ke Railway Volume (mis. /data) — config.json,
+// sesi WhatsApp (wa_auth), daftar user yang udah pernah chat, dan setting
+// mode disimpan di sini biar tidak hilang/reset tiap redeploy. Harus sama
+// dengan DATA_DIR yang dipakai back.py, biar keduanya baca file yang sama.
+const DATA_DIR = process.env.DATA_DIR || __dirname
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
+
 // Baca nama config buat display doang
-const configPath = path.join(__dirname, 'config.json')
+const configPath = path.join(DATA_DIR, 'config.json')
 let configData = {}
 let OWNER_NAME = 'exel'
 try {
@@ -26,14 +33,20 @@ try {
 } catch (e) {}
 
 // Key buat otentikasi wa.js -> back.py (server-ke-server). Prioritas env
-// var API_KEY (sama seperti yang dibaca back.py), fallback ke config.json.
-const API_KEY = process.env.API_KEY || configData.api_key || ''
+// var API_KEY (master key, disarankan). Fallback: ambil key pertama yang
+// ada di config.json["api_keys"] (format baru, dict per-client).
+let API_KEY = process.env.API_KEY || ''
+if (!API_KEY && configData.api_keys && typeof configData.api_keys === 'object') {
+  const firstKey = Object.keys(configData.api_keys)[0]
+  if (firstKey) API_KEY = firstKey
+}
 
-const QR_FILE = 'qr_current.txt'
-const QR_IMAGE = 'qr_current.png'
-const SELF_FILE = 'self_mode.txt'
-const SEEN_FILE = 'seen_users.json'
-const DS_FILE = 'ds_mode.txt'
+const QR_FILE = path.join(DATA_DIR, 'qr_current.txt')
+const QR_IMAGE = path.join(DATA_DIR, 'qr_current.png')
+const SELF_FILE = path.join(DATA_DIR, 'self_mode.txt')
+const SEEN_FILE = path.join(DATA_DIR, 'seen_users.json')
+const DS_FILE = path.join(DATA_DIR, 'ds_mode.txt')
+const WA_AUTH_DIR = path.join(DATA_DIR, 'wa_auth')
 
 // ── Tunggu Backend Siap ──
 async function waitForBackend(maxRetries = 15, delayMs = 1000) {
@@ -103,7 +116,7 @@ await loadPlugins()
 
 // ── Main Bot Connection ──
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState('wa_auth')
+  const { state, saveCreds } = await useMultiFileAuthState(WA_AUTH_DIR)
   const { version } = await fetchLatestBaileysVersion()
 
   const sock = makeWASocket({
