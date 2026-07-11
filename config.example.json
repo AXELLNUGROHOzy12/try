@@ -1,0 +1,19 @@
+{
+  "nama_ai": "Nova",
+  "nama_user": "Kamu",
+  "kepribadian": "Jawab singkat, ramah, dan gaul bro.",
+  "kode_akses": "SXIELD1",
+  "port": 8000,
+  "gemini_api_key": "",
+  "chatgpt_api_key": "",
+  "endpoints": {
+    "gptoss": "https://api.siputzx.my.id/api/ai/gptoss120b?prompt={prompt}",
+    "chet": "https://api.siputzx.my.id/api/ai/gptoss120b?prompt=Halo",
+    "llama": "https://api.siputzx.my.id/api/ai/llama33-70b?prompt={prompt}",
+    "chatgepete": "https://api.siputzx.my.id/api/ai/gptoss120b?prompt={prompt}",
+    "tes": "https://api.siputzx.my.id/api/ai/gemini?text={prompt}&cookie=yes&promptSystem=jawab+singkat+ramah+jelas+Dan+gaul+bro+Dan+nama+kamu+nova+ai"
+  },
+  "owner_wa": "628xxxxxxxxxx",
+  "global_ai": "tes",
+  "owner_lid": ""
+}

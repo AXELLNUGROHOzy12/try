@@ -1,0 +1,14 @@
+{
+  "admin": {
+    "password": "12345",
+    "is_admin": true
+  },
+  "exal": {
+    "password": "exal",
+    "is_admin": false
+  },
+  "adminn": {
+    "password": "2344",
+    "is_admin": true
+  }
+}
