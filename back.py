@@ -37,6 +37,11 @@ CHATGPT_API_BASE = "https://api.openai.com/v1/chat/completions"
 
 BUILTIN_AI = ["gemini", "chatgpt"]
 
+def get_all_providers(cfg):
+    """Built-in + semua custom endpoint yang udah ditambahkan."""
+    custom = list(cfg.get("endpoints", {}).keys())
+    return BUILTIN_AI + custom
+
 # ── Rate limit: berlaku PER-IP, terlepas dari API key valid atau tidak ──
 # Ini jaga-jaga kalau key bocor / di-share, orang tetap nggak bisa spam.
 RATE_LIMIT_MAX = 20      # maksimal request
