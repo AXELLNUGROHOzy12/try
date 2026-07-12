@@ -49,11 +49,29 @@ def is_rate_limited(ip):
     while bucket and now - bucket[0] > RATE_LIMIT_WINDOW:
         bucket.popleft()
     if len(bucket) >= RATE_LIMIT_MAX:
+        blocked_ips.append({"ts": now, "ip": ip})
         return True
     bucket.append(now)
     return False
 
-def get_all_providers(cfg):
+# ── Data buat page monitor (in-memory, reset tiap restart — cukup buat live view) ──
+SERVER_START = time.time()
+recent_activity = deque(maxlen=100)   # {ts, key_name, provider, latency_ms, preview}
+recent_errors = deque(maxlen=50)      # {ts, provider, error}
+auth_failures = deque(maxlen=100)     # {ts, ip}
+blocked_ips = deque(maxlen=100)       # {ts, ip} — kena rate limit
+requests_by_hour = defaultdict(int)   # "YYYY-MM-DD HH:00" -> jumlah request
+
+def log_activity(key_name, provider, latency_ms, msg_preview):
+    recent_activity.append({
+        "ts": time.time(), "key_name": key_name, "provider": provider,
+        "latency_ms": round(latency_ms), "preview": msg_preview[:60]
+    })
+    bucket = time.strftime("%Y-%m-%d %H:00")
+    requests_by_hour[bucket] += 1
+
+def log_error(provider, error):
+    recent_errors.append({"ts": time.time(), "provider": provider, "error": str(error)[:200]})
     """Built-in + semua custom endpoint yang udah ditambahkan."""
     custom = list(cfg.get("endpoints", {}).keys())
     return BUILTIN_AI + custom
@@ -148,6 +166,7 @@ def check_api_key(handler):
             meta["last_used"] = time.time()
             save_config(config)
             return meta.get("name", "unnamed")
+    auth_failures.append({"ts": time.time(), "ip": handler.client_address[0]})
     return None
 
 chat_sessions = {}
@@ -371,6 +390,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_file("static/qr.html", "text/html; charset=utf-8")
         elif path == "/admin":
             self._serve_file("static/admin.html", "text/html; charset=utf-8")
+        elif path == "/monitor":
+            self._serve_file("static/monitor.html", "text/html; charset=utf-8")
         elif path == "/qr-data":
             self._serve_qr_data()
         elif path == "/qr-image":
@@ -443,7 +464,16 @@ class Handler(BaseHTTPRequestHandler):
 
         elif self.path == "/chat":
             global config, global_ai
+            # IP asli dipakai buat rate limit. X-Real-IP cuma dipercaya
+            # kalau disertai secret yang cocok (PROXY_SECRET) — biar orang
+            # yang punya API key valid nggak bisa nge-spoof header ini buat
+            # bypass rate limit dengan manggil backend langsung, skip Worker.
             client_ip = self.client_address[0]
+            proxy_secret = os.environ.get("PROXY_SECRET", "").strip()
+            if proxy_secret and secrets.compare_digest(self.headers.get("X-Proxy-Secret", ""), proxy_secret):
+                real_ip = self.headers.get("X-Real-IP", "").strip()
+                if real_ip:
+                    client_ip = real_ip
 
             if is_rate_limited(client_ip):
                 self._set_headers(429)
@@ -460,8 +490,10 @@ class Handler(BaseHTTPRequestHandler):
             # X-Api-Key hilang/lupa — dipakai buat recovery. Selain itu
             # (chat biasa & /ai) wajib X-Api-Key valid.
             ADMIN_CMD_PREFIXES = ("/add ", "/delete ", "/change ", "/apikey ")
+            key_name = "admin-cmd"
             if not msg.startswith(ADMIN_CMD_PREFIXES):
-                if check_api_key(self) is None:
+                key_name = check_api_key(self)
+                if key_name is None:
                     self._set_headers(401)
                     self.wfile.write(json.dumps({"error": "API key tidak valid. Sertakan header X-Api-Key."}).encode())
                     return
@@ -662,13 +694,17 @@ class Handler(BaseHTTPRequestHandler):
             history = chat_sessions.setdefault(session_id, [])
             history.append({"role": "user", "text": msg})
 
+            _t0 = time.time()
             reply, err = call_ai(history, config, provider)
+            latency_ms = (time.time() - _t0) * 1000
             if err:
                 history.pop()
+                log_error(provider, err)
                 self._set_headers(500)
                 self.wfile.write(json.dumps({"error": err}).encode())
             else:
                 history.append({"role": "model", "text": reply})
+                log_activity(key_name, provider, latency_ms, msg)
                 self._set_headers(200)
                 self.wfile.write(json.dumps({"reply": reply}).encode())
 
@@ -831,6 +867,69 @@ class Handler(BaseHTTPRequestHandler):
                     "global_ai": global_ai,
                     "total_users": len(users),
                     "total_api_keys": len(config.get("api_keys", {})),
+                }).encode())
+
+            elif self.path == "/admin/monitor":
+                now = time.time()
+                # Status WA dari qr_current.txt yang ditulis wa.js
+                wa_status = "unknown"
+                try:
+                    with open(os.path.join(DATA_DIR, "qr_current.txt"), "r", encoding="utf-8") as f:
+                        wa_status = f.read().strip()
+                except FileNotFoundError:
+                    pass
+
+                owner_wa = config.get("owner_wa", "")
+                owner_masked = (owner_wa[:4] + "***" + owner_wa[-2:]) if len(owner_wa) > 6 else "***"
+
+                # request per jam, 24 jam terakhir, urut waktu
+                hours = []
+                for i in range(23, -1, -1):
+                    label = time.strftime("%H:00", time.localtime(now - i * 3600))
+                    bucket_key = time.strftime("%Y-%m-%d %H:00", time.localtime(now - i * 3600))
+                    hours.append({"label": label, "count": requests_by_hour.get(bucket_key, 0)})
+
+                activity = list(recent_activity)[-20:][::-1]
+                errors = list(recent_errors)[-15:][::-1]
+                blocked = list(blocked_ips)[-15:][::-1]
+                failed_auth = list(auth_failures)[-15:][::-1]
+
+                avg_latency = 0
+                if recent_activity:
+                    avg_latency = round(sum(a["latency_ms"] for a in recent_activity) / len(recent_activity))
+
+                self._set_headers(200)
+                self.wfile.write(json.dumps({
+                    "uptime_seconds": round(now - SERVER_START),
+                    "wa_status": wa_status,
+                    "global_ai": global_ai or "per-sesi",
+                    "requests_today": sum(v for k, v in requests_by_hour.items() if k.startswith(time.strftime("%Y-%m-%d"))),
+                    "requests_by_hour": hours,
+                    "avg_latency_ms": avg_latency,
+                    "recent_activity": activity,
+                    "recent_errors": errors,
+                    "blocked_ips": blocked,
+                    "auth_failures": failed_auth,
+                    "total_users": len(users),
+                    "total_api_keys": len(config.get("api_keys", {})),
+                    "env_master_active": bool(ENV_MASTER_KEY),
+                    "nama_ai": config.get("nama_ai"),
+                    "kepribadian_preview": (config.get("kepribadian", "")[:80]),
+                    "owner_wa_masked": owner_masked,
+                    "active_sessions": len(chat_sessions),
+                }).encode())
+
+            elif self.path == "/admin/test-provider":
+                length = int(self.headers.get("Content-Length", 0))
+                data = json.loads(self.rfile.read(length)) if length else {}
+                provider = (data.get("provider") or "gemini").strip().lower()
+                t0 = time.time()
+                reply, err = call_ai([{"role": "user", "text": "ping"}], config, provider)
+                latency_ms = round((time.time() - t0) * 1000)
+                self._set_headers(200)
+                self.wfile.write(json.dumps({
+                    "ok": err is None, "provider": provider,
+                    "latency_ms": latency_ms, "error": err
                 }).encode())
 
             else:

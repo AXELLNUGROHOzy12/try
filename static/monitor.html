@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nova Monitor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  :root {
+    --bg: #08090c; --panel: #101218; --panel2: #161922; --line: #232733;
+    --text: #d8dce6; --sub: #6b7386; --green: #4ade80; --amber: #fbbf24; --red: #f87171;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  body { background: var(--bg); color: var(--text); min-height: 100dvh; font-family: 'Segoe UI', system-ui, sans-serif }
+
+  #gate { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 50 }
+  #gate.hidden { display: none }
+  .gate-box { width: 100%; max-width: 340px; padding: 32px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel) }
+  .gate-eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .15em; color: var(--green); margin-bottom: 6px }
+  .gate-box h1 { font-size: 20px; margin-bottom: 18px }
+  .gate-box input { width: 100%; background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; color: var(--text); padding: 11px 12px; font-family: var(--mono); font-size: 13px; margin-bottom: 12px; outline: none }
+  .gate-box input:focus { border-color: var(--green) }
+  .gate-box button { width: 100%; background: var(--green); border: none; color: #08090c; border-radius: 3px; padding: 11px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: var(--mono) }
+  .gate-err { color: var(--red); font-size: 12px; margin-top: 10px; font-family: var(--mono); min-height: 14px }
+
+  #shell { display: none; max-width: 980px; margin: 0 auto; padding: 26px 18px 60px }
+  #shell.visible { display: block }
+  .topbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 22px; flex-wrap: wrap; gap: 8px }
+  .topbar .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .15em; color: var(--green) }
+  .topbar h1 { font-size: 21px; margin-top: 4px }
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 7px; animation: pulse 2s infinite }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)} 70%{box-shadow:0 0 0 6px rgba(74,222,128,0)} 100%{box-shadow:0 0 0 0 rgba(74,222,128,0)} }
+  .refresh-note { font-family: var(--mono); font-size: 10.5px; color: var(--sub) }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: 20px; border-radius: 4px; overflow: hidden }
+  .stat { background: var(--panel); padding: 13px 15px }
+  .stat .label { font-family: var(--mono); font-size: 9.5px; color: var(--sub); letter-spacing: .08em; text-transform: uppercase }
+  .stat .value { font-size: 16px; margin-top: 5px; font-weight: 700; word-break: break-word }
+  .stat .value.ok { color: var(--green) }
+  .stat .value.warn { color: var(--amber) }
+  .stat .value.bad { color: var(--red) }
+
+  .panel { border: 1px solid var(--line); border-radius: 4px; background: var(--panel); margin-bottom: 20px }
+  .panel-head { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between }
+  .panel-head h2 { font-size: 12.5px; font-family: var(--mono); letter-spacing: .06em }
+  .panel-head span { font-size: 10.5px; color: var(--sub); font-family: var(--mono) }
+  .panel-body { padding: 4px 0 }
+  .empty { padding: 18px 16px; color: var(--sub); font-size: 12px; font-family: var(--mono) }
+
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px }
+  .row:last-child { border-bottom: none }
+  .row .t { font-family: var(--mono); color: var(--sub); font-size: 10.5px; min-width: 42px }
+  .row .main { flex: 1; word-break: break-word }
+  .row .tag { font-family: var(--mono); font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--panel2); border: 1px solid var(--line) }
+
+  .chart { display: flex; align-items: flex-end; gap: 2px; padding: 16px; height: 90px }
+  .bar { flex: 1; background: var(--green); border-radius: 2px 2px 0 0; min-height: 2px; opacity: .75; position: relative }
+  .bar:hover { opacity: 1 }
+  .chart-labels { display: flex; gap: 2px; padding: 0 16px 12px; font-family: var(--mono); font-size: 9px; color: var(--sub) }
+  .chart-labels span { flex: 1; text-align: center }
+
+  .test-row { display: flex; gap: 8px; padding: 12px 16px; flex-wrap: wrap }
+  .test-row button { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 3px; padding: 8px 14px; font-size: 12px; cursor: pointer; font-family: var(--mono) }
+  .test-row button:hover { border-color: var(--green) }
+  .test-result { padding: 0 16px 14px; font-family: var(--mono); font-size: 12px; min-height: 16px }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line); padding: 10px 18px; border-radius: 4px; font-size: 12.5px; font-family: var(--mono); opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90%; text-align: center }
+  .toast.show { opacity: 1 }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-box">
+    <div class="gate-eyebrow">// AKSES TERBATAS</div>
+    <h1>Nova Monitor</h1>
+    <input type="password" id="kodeInput" placeholder="kode_akses" autocomplete="off">
+    <button id="kodeBtn">Masuk</button>
+    <div class="gate-err" id="kodeErr"></div>
+  </div>
+</div>
+
+<div id="shell">
+  <div class="topbar">
+    <div>
+      <div class="eyebrow"><span class="live-dot"></span>NOVA AI // MONITOR</div>
+      <h1 id="pageTitle">Nova Monitor</h1>
+    </div>
+    <span class="refresh-note" id="refreshNote">auto-refresh 10s</span>
+  </div>
+
+  <!-- 1-8: kartu ringkasan -->
+  <div class="grid" id="statGrid"><div class="stat"><div class="label">Status</div><div class="value">memuat…</div></div></div>
+
+  <!-- 9: grafik request per jam -->
+  <div class="panel">
+    <div class="panel-head"><h2>REQUEST / JAM (24 JAM TERAKHIR)</h2><span id="totalToday"></span></div>
+    <div class="chart" id="chart"></div>
+    <div class="chart-labels" id="chartLabels"></div>
+  </div>
+
+  <!-- 10: test koneksi AI provider -->
+  <div class="panel">
+    <div class="panel-head"><h2>TEST KONEKSI AI PROVIDER</h2></div>
+    <div class="test-row">
+      <button data-test="gemini">Ping Gemini</button>
+      <button data-test="chatgpt">Ping ChatGPT</button>
+    </div>
+    <div class="test-result" id="testResult"></div>
+  </div>
+
+  <!-- 11: aktivitas chat terbaru -->
+  <div class="panel">
+    <div class="panel-head"><h2>AKTIVITAS TERBARU</h2><span id="activityCount"></span></div>
+    <div class="panel-body" id="activityBody"><div class="empty">Memuat…</div></div>
+  </div>
+
+  <!-- 12: error terbaru -->
+  <div class="panel">
+    <div class="panel-head"><h2>ERROR AI TERBARU</h2><span id="errorCount"></span></div>
+    <div class="panel-body" id="errorBody"><div class="empty">Belum ada error 🎉</div></div>
+  </div>
+
+  <!-- 13: IP kena rate limit -->
+  <div class="panel">
+    <div class="panel-head"><h2>IP KENA RATE LIMIT</h2><span id="blockedCount"></span></div>
+    <div class="panel-body" id="blockedBody"><div class="empty">Belum ada.</div></div>
+  </div>
+
+  <!-- 14: percobaan API key gagal -->
+  <div class="panel">
+    <div class="panel-head"><h2>API KEY DITOLAK (401)</h2><span id="authFailCount"></span></div>
+    <div class="panel-body" id="authFailBody"><div class="empty">Belum ada.</div></div>
+  </div>
+
+  <!-- 15: ringkasan config -->
+  <div class="panel">
+    <div class="panel-head"><h2>RINGKASAN CONFIG</h2></div>
+    <div class="panel-body" id="configBody"><div class="empty">Memuat…</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let KODE = sessionStorage.getItem('nova_kode') || ''
+const gate = document.getElementById('gate')
+const shell = document.getElementById('shell')
+const kodeInput = document.getElementById('kodeInput')
+const kodeBtn = document.getElementById('kodeBtn')
+const kodeErr = document.getElementById('kodeErr')
+let pollTimer = null
+
+function toast(msg) {
+  const t = document.getElementById('toast')
+  t.textContent = msg
+  t.classList.add('show')
+  setTimeout(() => t.classList.remove('show'), 2400)
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Access-Code': KODE },
+    body: JSON.stringify(body || {})
+  })
+  if (res.status === 403) throw new Error('FORBIDDEN')
+  return res.json()
+}
+
+function fmtTime(ts) {
+  if (!ts) return '-'
+  return new Date(ts * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60)
+  return h > 0 ? `${h}j ${m}m` : `${m}m`
+}
+function waLabel(status) {
+  if (status === 'connected') return { text: '🟢 Terhubung', cls: 'ok' }
+  if (status === 'loggedout') return { text: '🔴 Logout', cls: 'bad' }
+  if (status === 'unknown') return { text: '⚪ Belum diketahui', cls: 'warn' }
+  return { text: '🟡 Perlu scan QR', cls: 'warn' }
+}
+
+async function loadMonitor() {
+  const d = await api('/admin/monitor')
+
+  // 1-8: kartu ringkasan
+  const wa = waLabel(d.wa_status)
+  document.getElementById('pageTitle').textContent = d.nama_ai || 'Nova Monitor'
+  document.getElementById('statGrid').innerHTML = `
+    <div class="stat"><div class="label">1. Uptime</div><div class="value ok">${fmtUptime(d.uptime_seconds)}</div></div>
+    <div class="stat"><div class="label">2. Status WA</div><div class="value ${wa.cls}">${wa.text}</div></div>
+    <div class="stat"><div class="label">3. Global AI</div><div class="value">${d.global_ai}</div></div>
+    <div class="stat"><div class="label">4. Request Hari Ini</div><div class="value">${d.requests_today}</div></div>
+    <div class="stat"><div class="label">5. Latensi Rata-rata</div><div class="value ${d.avg_latency_ms > 4000 ? 'warn' : 'ok'}">${d.avg_latency_ms} ms</div></div>
+    <div class="stat"><div class="label">6. Sesi Aktif</div><div class="value">${d.active_sessions}</div></div>
+    <div class="stat"><div class="label">12. Total Users</div><div class="value">${d.total_users}</div></div>
+    <div class="stat"><div class="label">13. Total API Keys</div><div class="value">${d.total_api_keys}${d.env_master_active ? ' +env' : ''}</div></div>
+  `
+
+  // 9: grafik
+  document.getElementById('totalToday').textContent = d.requests_today + ' hari ini'
+  const max = Math.max(1, ...d.requests_by_hour.map(h => h.count))
+  document.getElementById('chart').innerHTML = d.requests_by_hour.map(h =>
+    `<div class="bar" style="height:${Math.max(2, h.count / max * 100)}%" title="${h.label}: ${h.count}"></div>`
+  ).join('')
+  document.getElementById('chartLabels').innerHTML = d.requests_by_hour
+    .filter((_, i) => i % 4 === 0)
+    .map(h => `<span style="flex:4">${h.label}</span>`).join('')
+
+  // 11: aktivitas terbaru
+  const actBody = document.getElementById('activityBody')
+  document.getElementById('activityCount').textContent = d.recent_activity.length + ' terbaru'
+  actBody.innerHTML = d.recent_activity.length ? d.recent_activity.map(a => `
+    <div class="row">
+      <span class="t">${fmtTime(a.ts)}</span>
+      <span class="main">${a.preview}</span>
+      <span class="tag">${a.key_name}</span>
+      <span class="tag">${a.provider}</span>
+      <span class="tag">${a.latency_ms}ms</span>
+    </div>`).join('') : '<div class="empty">Belum ada aktivitas.</div>'
+
+  // 12: error
+  const errBody = document.getElementById('errorBody')
+  document.getElementById('errorCount').textContent = d.recent_errors.length + ' error'
+  errBody.innerHTML = d.recent_errors.length ? d.recent_errors.map(e => `
+    <div class="row">
+      <span class="t">${fmtTime(e.ts)}</span>
+      <span class="tag" style="color:var(--red)">${e.provider}</span>
+      <span class="main">${e.error}</span>
+    </div>`).join('') : '<div class="empty">Belum ada error 🎉</div>'
+
+  // 13: blocked ip
+  const blockedBody = document.getElementById('blockedBody')
+  document.getElementById('blockedCount').textContent = d.blocked_ips.length + ' kejadian'
+  blockedBody.innerHTML = d.blocked_ips.length ? d.blocked_ips.map(b => `
+    <div class="row"><span class="t">${fmtTime(b.ts)}</span><span class="main">${b.ip}</span></div>`).join('')
+    : '<div class="empty">Belum ada.</div>'
+
+  // 14: auth failures
+  const authBody = document.getElementById('authFailBody')
+  document.getElementById('authFailCount').textContent = d.auth_failures.length + ' percobaan'
+  authBody.innerHTML = d.auth_failures.length ? d.auth_failures.map(a => `
+    <div class="row"><span class="t">${fmtTime(a.ts)}</span><span class="main">${a.ip}</span></div>`).join('')
+    : '<div class="empty">Belum ada.</div>'
+
+  // 15: ringkasan config
+  document.getElementById('configBody').innerHTML = `
+    <div class="row"><span class="main">Nama AI</span><span class="tag">${d.nama_ai}</span></div>
+    <div class="row"><span class="main">Owner WA</span><span class="tag">${d.owner_wa_masked}</span></div>
+    <div class="row"><span class="main">Kepribadian</span><span class="main">${d.kepribadian_preview}…</span></div>
+  `
+}
+
+document.querySelectorAll('[data-test]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const provider = btn.getAttribute('data-test')
+    const out = document.getElementById('testResult')
+    out.textContent = `Testing ${provider}…`
+    try {
+      const r = await api('/admin/test-provider', { provider })
+      out.innerHTML = r.ok
+        ? `<span style="color:var(--green)">✅ ${provider} OK — ${r.latency_ms}ms</span>`
+        : `<span style="color:var(--red)">❌ ${provider} gagal — ${r.error}</span>`
+    } catch (e) {
+      out.innerHTML = `<span style="color:var(--red)">❌ Gagal test: ${e.message}</span>`
+    }
+  })
+})
+
+async function tryLogin() {
+  const val = kodeInput.value.trim()
+  if (!val) return
+  kodeBtn.disabled = true
+  kodeErr.textContent = ''
+  KODE = val
+  try {
+    await loadMonitor()
+    sessionStorage.setItem('nova_kode', val)
+    gate.classList.add('hidden')
+    shell.classList.add('visible')
+    pollTimer = setInterval(() => loadMonitor().catch(() => {}), 10000)
+  } catch (e) {
+    kodeErr.textContent = 'Kode akses salah.'
+    KODE = ''
+  }
+  kodeBtn.disabled = false
+}
+kodeBtn.addEventListener('click', tryLogin)
+kodeInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin() })
+
+if (KODE) {
+  loadMonitor().then(() => {
+    gate.classList.add('hidden')
+    shell.classList.add('visible')
+    pollTimer = setInterval(() => loadMonitor().catch(() => {}), 10000)
+  }).catch(() => { sessionStorage.removeItem('nova_kode'); KODE = '' })
+}
+</script>
+</body>
+</html>
