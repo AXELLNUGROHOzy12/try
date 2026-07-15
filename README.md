@@ -1,5 +1,12 @@
 # Nova AI
+Nova Ai adalah ai pintar dengan fitur yang bisa dikembangkan sendiri, anda dapat mengubah personalisasi maupun menambah fitur baru
 
+Nova ai Dibuat oleh axel dengan bekerjasama bersama kecerdasaan buatan lainnya.
+Jadi script ini TIDAK MEMPUNYAI HAK CIPTA
+jadi anda bebas untuk mendownload nya dan mengubahnya sesuka hati anda
+-Axel
+
+#How To Usage
 Backend chatbot AI (`back.py`, Python) + bot WhatsApp (`wa.js`, Node.js/Baileys)
 yang jalan bareng dalam satu container. Ada juga halaman chat web
 (`static/index.html`) dan dashboard admin (`static/admin.html`).
